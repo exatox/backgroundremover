@@ -11,7 +11,7 @@ from pathlib import Path
 from PIL import Image, ImageOps
 
 from . import __version__
-from .engine import Engine, content_box, matting_available, weights_present
+from .engine import AI_MODELS, Engine, content_box, matting_available, weights_present
 from .history import History
 from .paths import HISTORY_PATH, ORIGINALS_DIR, SETTINGS_PATH, THUMBS_DIR, resolve_dir, safe_filename, unique_path
 from .settings import MODELS, Settings
@@ -328,7 +328,7 @@ class App:
             s = self.settings.get()["processing"]
             # A model that still has to be downloaded is fetched with the first image instead,
             # where the download progress can be shown.
-            if weights_present(s["model"]):
+            if s["model"] in AI_MODELS and weights_present(s["model"]):
                 self.engine.load(s["model"], s["device"], s["precision"])
         except Exception:
             log.exception("Model preload failed")
@@ -381,7 +381,7 @@ class App:
                     "created": time.time(),
                     "model": proc["model"],
                     "mode": out["mode"],
-                    "alpha_matting": bool(proc["alpha_matting"] and out["mode"] != "mask"),
+                    "alpha_matting": bool(proc["alpha_matting"] and out["mode"] != "mask" and proc["model"] in AI_MODELS),
                     "format": out["format"],
                     "width": result.width,
                     "height": result.height,
@@ -390,7 +390,7 @@ class App:
                     "rev": 0,
                     "bytes": out_path.stat().st_size,
                     "seconds": round(time.time() - started, 2),
-                    "device": self.engine.pick_device(proc["device"]),
+                    "device": self.engine.pick_device(proc["device"]) if proc["model"] in AI_MODELS else "cpu",
                     "precision": self.engine.effective_precision(proc["model"], proc["device"], proc["precision"]),
                 }
             ),

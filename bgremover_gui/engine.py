@@ -31,7 +31,9 @@ MODEL_NAMES = {
     "u2net_human_seg": "People (u2net_human_seg)",
     "u2netp": "Lightweight (u2netp)",
     "birefnet": "High detail (BiRefNet)",
+    "colorkey": "Color key",
 }
+AI_MODELS = ("u2net", "u2net_human_seg", "u2netp", "birefnet")
 
 # Pixels at or below this alpha (about 8% opacity) count as empty when trimming, so the
 # faint haze a mask can leave far from the subject does not hold the crop open.
@@ -267,6 +269,11 @@ class Engine:
         """
         stage = on_stage or (lambda _text: None)
         model, device, precision = processing["model"], processing["device"], processing["precision"]
+        if model == "colorkey":
+            stage("Removing color…")
+            key = None if processing["key_color_auto"] else _hex_rgb(processing["key_color"])
+            colors, mask = color_key(img, key, processing["key_tolerance"], processing["key_softness"], processing["key_scope"])
+            return self._finish(colors, mask, processing, output, stage, allow_matting=False)
         if not self.is_loaded(model, device, precision):
             if not weights_present(model):
                 last = [-1]
@@ -283,7 +290,11 @@ class Engine:
                 self.load(model, device, precision)
         stage("Removing background…")
         mask = self.predict_mask(img, model, device, precision)
+        return self._finish(img, mask, processing, output, stage)
 
+    @staticmethod
+    def _finish(img, mask, processing, output, stage, allow_matting=True):
+        """Apply the shared post-processing (threshold, matting, output mode, auto-trim) to a mask."""
         if processing["mask_threshold_enabled"]:
             cut = processing["mask_threshold"]
             mask = mask.point(lambda p: 255 if p > cut else 0)
@@ -292,7 +303,7 @@ class Engine:
             box = content_box(mask) if output["auto_trim"] else None
             return (mask.crop(box), box) if box else (mask, None)
 
-        if processing["alpha_matting"]:
+        if processing["alpha_matting"] and allow_matting:
             stage("Refining edges…")
             cutout = alpha_matting_cutout(
                 img,
@@ -315,6 +326,50 @@ class Engine:
             flat.paste(cutout, mask=cutout.getchannel("A"))
             return flat, box
         return cutout, box
+
+
+def _hex_rgb(value):
+    return tuple(int(value[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def detect_key_color(arr):
+    """Most common colour along the image border (coarsely binned, then averaged)."""
+    border = np.concatenate([arr[0], arr[-1], arr[:, 0], arr[:, -1]]).astype(np.int32)
+    bins = border // 8
+    codes = (bins[:, 0] << 10) | (bins[:, 1] << 5) | bins[:, 2]
+    values, counts = np.unique(codes, return_counts=True)
+    return border[codes == values[counts.argmax()]].mean(axis=0)
+
+
+def color_key(img, key, tolerance, softness, scope):
+    """Make one colour transparent (no AI). Works on the full-resolution image.
+
+    tolerance / softness are percentages of the largest possible RGB distance:
+    pixels within `tolerance` of the key become fully transparent, and the next
+    `softness` fade back to opaque, which keeps anti-aliased edges smooth. Edge
+    pixels have the key colour un-blended from them so no light fringe is left.
+    scope "edges" only removes key-coloured areas connected to the image border.
+    Returns (colours RGB image, alpha mask L image).
+    """
+    arr = np.asarray(img, dtype=np.float32)
+    k = np.asarray(key if key is not None else detect_key_color(arr), dtype=np.float32)
+    distance = np.sqrt(((arr - k) ** 2).sum(axis=2)) / (np.sqrt(3) * 255) * 100
+    alpha = np.clip((distance - tolerance) / max(softness, 0.5), 0.0, 1.0)
+
+    if scope == "edges":
+        from scipy.ndimage import label
+
+        labels, _ = label(alpha < 1.0)
+        edge_labels = np.unique(np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]]))
+        alpha = np.where(np.isin(labels, edge_labels[edge_labels != 0]), alpha, 1.0)
+
+    a = alpha[..., None]
+    unblended = (arr - (1.0 - a) * k) / np.maximum(a, 1e-3)
+    colors = np.where(a >= 1.0, arr, np.clip(unblended, 0, 255))
+    return (
+        Image.fromarray(colors.round().astype(np.uint8), "RGB"),
+        Image.fromarray((alpha * 255).round().astype(np.uint8), "L"),
+    )
 
 
 def content_box(channel):

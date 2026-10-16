@@ -43,6 +43,9 @@ const ICONS = {
   columns: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/>',
   copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   crop: '<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>',
+  bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  pipette: '<path d="M2 22l1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="M15 6l3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3z"/>',
   scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.1 15.9M14.5 14.5L20 20M8.1 8.1L12 12"/>',
   alert: '<path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>',
 };
@@ -168,6 +171,7 @@ async function flushSettings() {
 }
 
 let lastSort = null;
+let lastOrder = null;
 
 function applySettings() {
   const s = state.settings;
@@ -186,6 +190,8 @@ function applySettings() {
   document.documentElement.dataset.theme = s.appearance.theme;
   document.body.dataset.thumbs = s.appearance.thumbnail_size;
   document.body.dataset.fit = s.appearance.thumbnail_fit;
+  document.body.style.setProperty('--thumb-pad', `${s.appearance.thumbnail_padding}px`);
+  document.body.dataset.probe = s.processing.model === 'colorkey' && !s.processing.key_color_auto ? 'on' : 'off';
   $('#viewer-stage').dataset.backdrop = s.appearance.viewer_background;
   $('#suffix-example').textContent = `${s.output.suffix}.${s.output.format}`;
   const dark = s.appearance.theme === 'dark' || (s.appearance.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
@@ -195,6 +201,10 @@ function applySettings() {
   if (lastSort !== s.appearance.history_sort) {
     lastSort = s.appearance.history_sort;
     scheduleHistoryRender();
+  }
+  if (lastOrder !== s.appearance.queue_order) {
+    lastOrder = s.appearance.queue_order;
+    reorderJobTiles();
   }
   applyInfo();
 }
@@ -346,14 +356,16 @@ async function trimEntry(id) {
   }
 }
 
-async function deleteEntries(ids) {
+async function deleteEntries(ids, ask = true) {
   if (!ids.length) return false;
   const what = ids.length === 1 ? (state.history.get(ids[0])?.output_name || 'this image') : plural(ids.length, 'image');
-  const ok = await confirmDialog(
-    ids.length === 1 ? 'Delete this result?' : `Delete ${plural(ids.length, 'result')}?`,
-    `${what} will be moved to the Recycle Bin and removed from the history.`,
-    'Delete');
-  if (!ok) return false;
+  if (ask) {
+    const ok = await confirmDialog(
+      ids.length === 1 ? 'Delete this result?' : `Delete ${plural(ids.length, 'result')}?`,
+      `${what} will be moved to the Recycle Bin and removed from the history.`,
+      'Delete');
+    if (!ok) return false;
+  }
   try {
     const { removed, errors } = await api('POST', 'history/delete', { ids });
     removeHistory(removed);
@@ -466,8 +478,24 @@ function dropPreview(id) {
   }
 }
 
+const newestFirst = () => state.settings.appearance.queue_order === 'newest';
+
+// Jobs in the order they are shown in the workspace.
+function orderedJobs() {
+  const jobs = [...state.jobs.values()];
+  return newestFirst() ? jobs.reverse() : jobs;
+}
+
+function reorderJobTiles() {
+  const grid = $('#job-grid');
+  for (const job of orderedJobs()) {
+    const tile = jobTiles.get(job.id);
+    if (tile) grid.append(tile.el);
+  }
+}
+
 function doneIds() {
-  return [...state.jobs.values()].filter(j => j.status === 'done' && state.history.has(j.history_id)).map(j => j.history_id);
+  return orderedJobs().filter(j => j.status === 'done' && state.history.has(j.history_id)).map(j => j.history_id);
 }
 
 function upsertJob(job) {
@@ -476,21 +504,30 @@ function upsertJob(job) {
   if (!tile) {
     tile = buildTile();
     const current = () => state.jobs.get(job.id);
+    tile.probe = actionButton('pipette', 'Pick the color to remove from the original', () => openPicker(current().history_id), 'needs-result probe-btn');
     tile.reprocess = actionButton('refresh', 'Re-process with the current settings', () => reprocessEntry(current().history_id), 'needs-result');
     tile.trim = actionButton('crop', 'Trim empty space', () => trimEntry(current().history_id), 'needs-result');
+    // On a finished image the X deletes the result; on anything else it just drops it from the list.
+    tile.remove = actionButton('x', 'Remove from this list', () => {
+      const j = current();
+      if (j.status === 'done' && state.history.has(j.history_id)) deleteEntries([j.history_id], state.settings.output.confirm_x_delete);
+      else api('POST', 'jobs/remove', { ids: [job.id] }).catch(e => toast(e.message, 'error'));
+    });
     tile.actions.append(
+      tile.probe,
       actionButton('copy', 'Copy image', () => copyEntry(current().history_id), 'needs-result'),
       actionButton('download', 'Download', () => downloadEntry(current().history_id), 'needs-result'),
       actionButton('external', 'Show in folder', () => revealEntry(current().history_id), 'needs-result'),
       tile.reprocess,
       tile.trim,
-      actionButton('x', 'Remove from this list', () => api('POST', 'jobs/remove', { ids: [job.id] }).catch(e => toast(e.message, 'error'))));
+      tile.remove);
     tile.el.addEventListener('click', () => {
       const j = current();
       if (j.status === 'done' && state.history.has(j.history_id)) openViewer(doneIds(), j.history_id);
     });
     jobTiles.set(job.id, tile);
-    $('#job-grid').append(tile.el);
+    if (newestFirst()) $('#job-grid').prepend(tile.el);
+    else $('#job-grid').append(tile.el);
   }
   updateJobTile(tile, job);
   renderQueueBar();
@@ -504,9 +541,12 @@ function updateJobTile(tile, job) {
   tile.img.draggable = !!entry;
   tile.name.textContent = entry ? entry.output_name : job.name;
   tile.name.title = tile.name.textContent;
+  tile.remove.title = entry ? 'Delete this image (moves it to the Recycle Bin)' : 'Remove from this list';
+  tile.remove.classList.toggle('danger', !!entry);
   if (entry) {
     dropPreview(job.id);
     tile.reprocess.hidden = !entry.has_original;
+    tile.probe.hidden = !entry.has_original;
     tile.trim.hidden = entry.mode === 'color';
     setTileImage(tile, fileUrl(entry.id, 'thumb'));
     tile.meta.textContent = `${entry.width} × ${entry.height} · ${fmtBytes(entry.bytes)} · ${entry.seconds}s`;
@@ -670,6 +710,7 @@ function historyTile(entry) {
   tile.meta.textContent = `${entry.width} × ${entry.height} · ${fmtBytes(entry.bytes)}`;
   setTileImage(tile, fileUrl(entry.id, 'thumb'));
   tile.actions.append(...[
+    entry.has_original && actionButton('pipette', 'Pick the color to remove from the original', () => openPicker(entry.id), 'probe-btn'),
     actionButton('copy', 'Copy image', () => copyEntry(entry.id)),
     actionButton('download', 'Download', () => downloadEntry(entry.id)),
     actionButton('external', 'Show in folder', () => revealEntry(entry.id)),
@@ -789,7 +830,7 @@ function renderViewer() {
   $('#viewer-counter').textContent = `${viewer.index + 1} / ${viewer.ids.length}`;
   $('#viewer-name').textContent = entry.output_name;
 
-  const modelNames = { u2net: 'General (u2net)', u2netp: 'Lightweight (u2netp)', u2net_human_seg: 'People (u2net_human_seg)', birefnet: 'High detail (BiRefNet)' };
+  const modelNames = { u2net: 'General (u2net)', u2netp: 'Lightweight (u2netp)', u2net_human_seg: 'People (u2net_human_seg)', birefnet: 'High detail (BiRefNet)', colorkey: 'Color key (no AI)' };
   const modeNames = { transparent: 'Transparent', color: 'Solid color', mask: 'Mask only' };
   const rows = [
     ['Dimensions', `${entry.width} × ${entry.height}`],
@@ -846,6 +887,92 @@ function bindViewer() {
     setView('workspace');
   };
   window.addEventListener('resize', fitViewer);
+}
+
+// ── color picker (color key) ───────────────────────────────────────────────
+const picker = { id: null, ctx: null };
+
+function openPicker(id) {
+  const entry = state.history.get(id);
+  if (!entry || !entry.has_original) return toast('The original image is no longer available', 'error');
+  picker.id = id;
+  const canvas = $('#picker-canvas');
+  const img = new Image();
+  img.onload = () => {
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    picker.ctx = canvas.getContext('2d', { willReadFrequently: true });
+    picker.ctx.drawImage(img, 0, 0);
+    $('#picker').hidden = false;
+    fitPicker();
+  };
+  img.onerror = () => toast('Could not load the original image', 'error');
+  img.src = fileUrl(id, 'original');
+}
+
+// Fit the image into the window; small images are enlarged (up to 4×) to make picking easier.
+function fitPicker() {
+  const canvas = $('#picker-canvas');
+  if ($('#picker').hidden || !canvas.width) return;
+  const stage = $('#picker-stage');
+  const scale = Math.min((stage.clientWidth - 24) / canvas.width, (stage.clientHeight - 24) / canvas.height, 4);
+  canvas.style.width = `${Math.round(canvas.width * scale)}px`;
+  canvas.style.height = `${Math.round(canvas.height * scale)}px`;
+}
+
+function closePicker() {
+  $('#picker').hidden = true;
+  $('#picker-loupe').hidden = true;
+  picker.id = picker.ctx = null;
+}
+
+// Average of a 3×3 patch, so JPEG noise doesn't skew the pick.
+function sampleColor(event) {
+  const canvas = $('#picker-canvas');
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.floor(((event.clientX - rect.left) / rect.width) * canvas.width);
+  const y = Math.floor(((event.clientY - rect.top) / rect.height) * canvas.height);
+  const x0 = Math.max(0, x - 1), y0 = Math.max(0, y - 1);
+  const w = Math.min(canvas.width, x + 2) - x0, hgt = Math.min(canvas.height, y + 2) - y0;
+  const data = picker.ctx.getImageData(x0, y0, w, hgt).data;
+  const sum = [0, 0, 0];
+  for (let i = 0; i < data.length; i += 4) for (let c = 0; c < 3; c++) sum[c] += data[i + c];
+  const n = data.length / 4;
+  return '#' + sum.map(v => Math.round(v / n).toString(16).padStart(2, '0')).join('');
+}
+
+function bindPicker() {
+  const canvas = $('#picker-canvas');
+  const loupe = $('#picker-loupe');
+  canvas.addEventListener('pointermove', e => {
+    if (!picker.ctx) return;
+    const hex = sampleColor(e);
+    const stage = $('#picker-stage').getBoundingClientRect();
+    loupe.hidden = false;
+    loupe.style.left = `${e.clientX - stage.left}px`;
+    loupe.style.top = `${e.clientY - stage.top}px`;
+    $('#picker-swatch').style.background = hex;
+    $('#picker-hex').textContent = hex;
+  });
+  canvas.addEventListener('pointerleave', () => { loupe.hidden = true; });
+  canvas.addEventListener('click', async e => {
+    if (!picker.ctx) return;
+    const hex = sampleColor(e);
+    const id = picker.id;
+    closePicker();
+    setSetting('processing.key_color', hex);
+    clearTimeout(saveTimer);
+    await flushSettings(); // the re-process below must see the new color
+    try {
+      await api('POST', 'reprocess', { id });
+      toast(`Removing ${hex} from ${state.history.get(id)?.name || 'the image'}`);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  });
+  $('#picker-close').onclick = closePicker;
+  window.addEventListener('resize', fitPicker);
+  $('#picker').addEventListener('click', e => { if (e.target === $('#picker')) closePicker(); });
 }
 
 // ── server connection ──────────────────────────────────────────────────────
@@ -1047,6 +1174,10 @@ function bindGlobal() {
       if (e.key === 'Escape') confirmDialog.finish(false);
       return;
     }
+    if (!$('#picker').hidden) {
+      if (e.key === 'Escape') closePicker();
+      return;
+    }
     if ($('#viewer').hidden) {
       if (e.key === 'Escape' && state.selected.size) { state.selected.clear(); updateSelection(); }
       return;
@@ -1069,6 +1200,7 @@ async function init() {
   bindWorkspace();
   bindHistory();
   bindViewer();
+  bindPicker();
   try {
     const data = await api('GET', 'state');
     adoptState(data);

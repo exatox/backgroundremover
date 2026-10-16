@@ -57,15 +57,23 @@
       </div>
 
       <div class="quick card">
-        <label class="field">
+        <div class="field model-field">
           <span>Model</span>
-          <select data-setting="processing.model">
-            <option value="u2net">General</option>
-            <option value="birefnet">High detail (BiRefNet)</option>
-            <option value="u2net_human_seg">People</option>
-            <option value="u2netp">Lightweight (fastest)</option>
-          </select>
-        </label>
+          <div class="chips">
+            <label class="chip" title="BiRefNet: best at cables, hair and gaps inside the subject"><input type="radio" name="q-model" value="birefnet" data-setting="processing.model"><span><i data-icon="sparkles"></i>High detail</span></label>
+            <label class="chip" title="u2net: works for most subjects"><input type="radio" name="q-model" value="u2net" data-setting="processing.model"><span><i data-icon="image"></i>General</span></label>
+            <label class="chip" title="u2netp: fastest, lower quality"><input type="radio" name="q-model" value="u2netp" data-setting="processing.model"><span><i data-icon="bolt"></i>Lightweight</span></label>
+            <label class="chip" title="u2net_human_seg: tuned for portraits"><input type="radio" name="q-model" value="u2net_human_seg" data-setting="processing.model"><span><i data-icon="user"></i>People</span></label>
+            <label class="chip" title="No AI: removes one color. Best for drawings, diagrams and screenshots"><input type="radio" name="q-model" value="colorkey" data-setting="processing.model"><span><i data-icon="pipette"></i>Color key</span></label>
+          </div>
+        </div>
+        <div class="field" data-show-if="processing.model=colorkey">
+          <span>Color to remove</span>
+          <div class="key-pick">
+            <label class="chip" title="Use the most common color along the image edges"><input type="checkbox" data-setting="processing.key_color_auto"><span>Auto</span></label>
+            <input type="color" data-setting="processing.key_color" data-show-if="processing.key_color_auto=false" title="Color to remove">
+          </div>
+        </div>
         <div class="field">
           <span>Background</span>
           <div class="segmented">
@@ -118,6 +126,10 @@
           <div class="progress"><div id="queue-fill"></div></div>
         </div>
         <div class="queue-actions">
+          <div class="segmented compact" title="Order of the images below">
+            <label><input type="radio" name="q-order" value="oldest" data-setting="appearance.queue_order"><span>Oldest first</span></label>
+            <label><input type="radio" name="q-order" value="newest" data-setting="appearance.queue_order"><span>Newest first</span></label>
+          </div>
           <button class="btn primary" id="start-btn" hidden><i data-icon="play"></i>Start</button>
           <button class="btn" id="cancel-btn" hidden><i data-icon="x"></i>Cancel waiting</button>
           <button class="btn" id="zip-btn" hidden><i data-icon="download"></i>Download all</button>
@@ -194,6 +206,10 @@
             </div>
           </div>
           <div class="row">
+            <div><strong>Thumbnail padding</strong><span>Space between the image and the edge of its tile, in the Full thumbnail view.</span></div>
+            <div class="range"><input type="range" min="0" max="40" data-setting="appearance.thumbnail_padding"><output data-value-of="appearance.thumbnail_padding"></output></div>
+          </div>
+          <div class="row">
             <div><strong>Thumbnail view</strong><span>Full shows the whole image. Cropped fills each tile and cuts off the edges.</span></div>
             <div class="segmented">
               <label><input type="radio" name="s-fit" value="full" data-setting="appearance.thumbnail_fit"><span>Full</span></label>
@@ -215,11 +231,39 @@
           <div class="row">
             <div><strong>Model</strong><span>General works for most subjects. High detail is best at cables, hair and gaps inside the subject<span id="birefnet-note"></span>. People is tuned for portraits. Lightweight trades quality for speed.</span></div>
             <select data-setting="processing.model">
-              <option value="u2net">General — u2net</option>
               <option value="birefnet">High detail — BiRefNet</option>
-              <option value="u2net_human_seg">People — u2net_human_seg</option>
+              <option value="u2net">General — u2net</option>
               <option value="u2netp">Lightweight — u2netp</option>
+              <option value="u2net_human_seg">People — u2net_human_seg</option>
+              <option value="colorkey">Color key — no AI</option>
             </select>
+          </div>
+          <div class="sub" data-show-if="processing.model=colorkey">
+            <div class="row">
+              <div><strong>Color key</strong><span>Removes one color instead of guessing the subject. Best for CAD drawings, diagrams, logos and screenshots on a plain background. Keeps your original pixels at full resolution. Refine edges is not used.</span></div>
+            </div>
+            <div class="row">
+              <div><strong>Color to remove</strong><span>Auto picks the most common color along the image edges. With Auto off, hover over a finished image and use the eyedropper to pick the color from its original.</span></div>
+              <div class="key-pick">
+                <label class="chip"><input type="checkbox" data-setting="processing.key_color_auto"><span>Auto</span></label>
+                <input type="color" data-setting="processing.key_color" data-show-if="processing.key_color_auto=false">
+              </div>
+            </div>
+            <div class="row">
+              <div><strong>Tolerance</strong><span>How different a pixel can be from that color and still be removed. Raise it for off-white or slightly noisy backgrounds.</span></div>
+              <div class="range"><input type="range" min="0" max="50" data-setting="processing.key_tolerance"><output data-value-of="processing.key_tolerance"></output></div>
+            </div>
+            <div class="row">
+              <div><strong>Edge softness</strong><span>Width of the fade between removed and kept pixels. Keeps anti-aliased outlines smooth.</span></div>
+              <div class="range"><input type="range" min="0" max="50" data-setting="processing.key_softness"><output data-value-of="processing.key_softness"></output></div>
+            </div>
+            <div class="row">
+              <div><strong>Remove</strong><span>Everywhere also clears holes and gaps inside the subject. Only from the edges keeps enclosed areas of that color.</span></div>
+              <div class="segmented">
+                <label><input type="radio" name="s-scope" value="everywhere" data-setting="processing.key_scope"><span>Everywhere</span></label>
+                <label><input type="radio" name="s-scope" value="edges" data-setting="processing.key_scope"><span>Only from the edges</span></label>
+              </div>
+            </div>
           </div>
           <div class="row">
             <div><strong>Device</strong><span id="device-detail">Auto uses the GPU when one is available.</span></div>
@@ -327,6 +371,10 @@
             <span class="switch"><input type="checkbox" data-setting="output.keep_originals"><i></i></span>
           </div>
           <div class="row">
+            <div><strong>Ask before X deletes</strong><span>The X on a finished Workspace thumbnail moves the image to the Recycle Bin. Off deletes straight away; deleting from History or the viewer always asks.</span></div>
+            <span class="switch"><input type="checkbox" data-setting="output.confirm_x_delete"><i></i></span>
+          </div>
+          <div class="row">
             <div><strong>Overwrite existing files</strong><span>Off adds “(2)”, “(3)”… when a file name is already taken.</span></div>
             <span class="switch"><input type="checkbox" data-setting="output.overwrite_existing"><i></i></span>
           </div>
@@ -405,6 +453,22 @@
       </div>
       <p class="hint">Tip: drag the image straight into another app, or press <kbd>Ctrl</kbd> + <kbd>C</kbd>.</p>
     </aside>
+  </div>
+</div>
+
+<div class="modal" id="picker" hidden>
+  <div class="picker">
+    <div class="picker-head">
+      <div>
+        <h3>Pick the color to remove</h3>
+        <p>Click the background in the original image. The image is then processed again with that color.</p>
+      </div>
+      <button class="icon-btn" id="picker-close" title="Cancel (Esc)"><i data-icon="x"></i></button>
+    </div>
+    <div class="picker-stage" id="picker-stage">
+      <canvas id="picker-canvas"></canvas>
+      <div class="loupe" id="picker-loupe" hidden><span id="picker-swatch"></span><code id="picker-hex"></code></div>
+    </div>
   </div>
 </div>
 

@@ -7,7 +7,7 @@ import yaml
 
 from .paths import SETTINGS_PATH
 
-MODELS = ("u2net", "u2netp", "u2net_human_seg", "birefnet")
+MODELS = ("u2net", "u2netp", "u2net_human_seg", "birefnet", "colorkey")
 
 # section -> key -> (kind, default, *constraints)
 SCHEMA = {
@@ -16,6 +16,8 @@ SCHEMA = {
         "viewer_background": ("choice", "checker", ("checker", "light", "dark")),
         "thumbnail_size": ("choice", "medium", ("small", "medium", "large")),
         "thumbnail_fit": ("choice", "full", ("full", "crop")),
+        "thumbnail_padding": ("int", 12, 0, 40),  # pixels of checkerboard around the image in Full view
+        "queue_order": ("choice", "oldest", ("oldest", "newest")),
         "history_sort": ("choice", "newest", ("newest", "oldest", "name", "largest")),
         "last_view": ("choice", "workspace", ("workspace", "history", "settings")),
     },
@@ -32,6 +34,12 @@ SCHEMA = {
         "alpha_matting_base_size": ("int", 1000, 200, 4000),
         "mask_threshold_enabled": ("bool", False),
         "mask_threshold": ("int", 128, 0, 255),
+        # Color key (no AI): which colour to remove and how closely pixels must match it.
+        "key_color_auto": ("bool", True),
+        "key_color": ("color", "#ffffff"),
+        "key_tolerance": ("int", 6, 0, 100),
+        "key_softness": ("int", 8, 0, 100),
+        "key_scope": ("choice", "everywhere", ("everywhere", "edges")),
     },
     "output": {
         "mode": ("choice", "transparent", ("transparent", "color", "mask")),
@@ -42,6 +50,7 @@ SCHEMA = {
         "suffix": ("str", "_nobg", 40),
         "keep_originals": ("bool", True),
         "overwrite_existing": ("bool", False),
+        "confirm_x_delete": ("bool", False),  # ask before the X on a workspace thumbnail deletes the image
     },
     "watch": {
         "screenshots": ("bool", False),

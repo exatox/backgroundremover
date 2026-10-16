@@ -28,6 +28,9 @@ another tab.
   cables, hair and background showing through gaps in the subject far better. BiRefNet's weights
   (444 MB) are downloaded on first use from Hugging Face at a pinned commit and checked against a
   SHA-256 before loading.
+- **Color key** (no AI): removes one color, auto-detected from the image edges or picked with the
+  eyedropper that appears on finished images when Auto is off. Best for drawings, diagrams and
+  screenshots on a plain background; keeps the original pixels at full resolution.
 - **Precision** (BiRefNet on the GPU): Half or Full. The U²-Net models always run at full precision,
   because their masks break down in half precision.
 - **Free GPU memory when idle**: the model is released after the chosen idle time and reloads by
