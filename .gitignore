@@ -191,3 +191,9 @@ olddist/
 token.txt
 CLAUDE.md
 AGENTS.md
+
+# Background Remover GUI (local state and build output)
+/settings.yaml
+/app_data/
+/output/
+/BackgroundRemover.exe

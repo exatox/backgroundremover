@@ -1,0 +1,7 @@
+# Background Remover GUI dependencies (installed from PyPI).
+# PyTorch is installed separately by setup.ps1 from the official PyTorch index.
+numpy==2.5.2
+pillow==12.3.0
+PyYAML==6.0.3
+pillow-heif==1.8.1
+pymatting==1.1.16

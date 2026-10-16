@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en" data-theme="__THEME__">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="bgr-token" content="__TOKEN__">
+  <title>Background Remover</title>
+  <link rel="icon" type="image/png" href="/static/icon.png">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="/static/icon.png" alt="" width="36" height="36">
+      <div class="brand-text"><strong>Background</strong><span>Remover</span></div>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-item" data-view="workspace"><i data-icon="sparkles"></i><span>Workspace</span><b class="badge" id="badge-queue" hidden></b></button>
+      <button class="nav-item" data-view="history"><i data-icon="history"></i><span>History</span><b class="badge" id="badge-history" hidden></b></button>
+      <button class="nav-item" data-view="settings"><i data-icon="settings"></i><span>Settings</span></button>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="device" id="device-chip" title="Processing device"><span class="dot"></span><span id="device-text">Starting engine…</span></div>
+      <div class="foot-row">
+        <button class="icon-btn" id="theme-toggle" title="Toggle dark mode"><i data-icon="moon"></i></button>
+        <button class="icon-btn" id="quit-btn" title="Quit Background Remover"><i data-icon="power"></i></button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- ───────────── Workspace ───────────── -->
+    <section class="view" id="view-workspace" hidden>
+      <header class="view-head">
+        <div>
+          <h1>Workspace</h1>
+          <p>Drop images, paste from the clipboard, or browse. Results are saved to <a href="#" id="output-link" title="Open output folder"></a></p>
+        </div>      </header>
+
+      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Add images">
+        <div class="dz-art"><i data-icon="image-plus"></i></div>
+        <div class="dz-text">
+          <strong>Drag &amp; drop images or folders here</strong>
+          <span>or press <kbd>Ctrl</kbd> + <kbd>V</kbd> to paste · PNG, JPG, WebP, HEIC, TIFF, BMP, AVIF</span>
+        </div>
+        <div class="dz-actions">
+          <button class="btn primary" id="browse-files"><i data-icon="folder-open"></i>Browse files</button>
+          <button class="btn" id="browse-folder"><i data-icon="folder"></i>Add folder</button>
+          <button class="btn" id="paste-btn"><i data-icon="clipboard"></i>Paste</button>
+        </div>
+        <input type="file" id="file-input" multiple accept="image/*,.heic,.heif,.avif,.tif,.tiff" hidden>
+        <input type="file" id="folder-input" webkitdirectory multiple hidden>
+      </div>
+
+      <div class="quick card">
+        <label class="field">
+          <span>Model</span>
+          <select data-setting="processing.model">
+            <option value="u2net">General</option>
+            <option value="birefnet">High detail (BiRefNet)</option>
+            <option value="u2net_human_seg">People</option>
+            <option value="u2netp">Lightweight (fastest)</option>
+          </select>
+        </label>
+        <div class="field">
+          <span>Background</span>
+          <div class="segmented">
+            <label><input type="radio" name="q-mode" value="transparent" data-setting="output.mode"><span>Transparent</span></label>
+            <label><input type="radio" name="q-mode" value="color" data-setting="output.mode"><span>Color</span></label>
+            <label><input type="radio" name="q-mode" value="mask" data-setting="output.mode"><span>Mask</span></label>
+          </div>
+        </div>
+        <label class="field" data-show-if="output.mode=color">
+          <span>Color</span>
+          <input type="color" data-setting="output.background_color">
+        </label>
+        <label class="field">
+          <span>Format</span>
+          <select data-setting="output.format">
+            <option value="png">PNG</option>
+            <option value="webp">WebP</option>
+          </select>
+        </label>
+        <label class="field inline" title="Slower, cleaner edges on hair and fur">
+          <span>Refine edges</span>
+          <span class="switch"><input type="checkbox" data-setting="processing.alpha_matting"><i></i></span>
+        </label>
+        <label class="field inline" title="Crop each result to its subject, removing the empty space around it">
+          <span>Auto-trim</span>
+          <span class="switch"><input type="checkbox" data-setting="output.auto_trim"><i></i></span>
+        </label>
+      </div>
+
+      <div class="quick card">
+        <div class="field">
+          <span>Auto-grab new images from</span>
+          <div class="chips">
+            <label class="chip" id="watch-screenshots-chip"><input type="checkbox" data-setting="watch.screenshots"><span><i data-icon="scissors"></i>Screenshots</span></label>
+            <label class="chip" id="watch-downloads-chip"><input type="checkbox" data-setting="watch.downloads"><span><i data-icon="download"></i>Downloads</span></label>
+          </div>
+        </div>
+        <div class="field push">
+          <span>Thumbnails</span>
+          <div class="segmented">
+            <label title="Show the whole image"><input type="radio" name="q-fit" value="full" data-setting="appearance.thumbnail_fit"><span>Full</span></label>
+            <label title="Fill the tile, cropping the edges"><input type="radio" name="q-fit" value="crop" data-setting="appearance.thumbnail_fit"><span>Cropped</span></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="queue-bar" id="queue-bar" hidden>
+        <div class="queue-progress">
+          <div class="queue-label"><strong id="queue-title"></strong><span id="queue-sub"></span></div>
+          <div class="progress"><div id="queue-fill"></div></div>
+        </div>
+        <div class="queue-actions">
+          <button class="btn primary" id="start-btn" hidden><i data-icon="play"></i>Start</button>
+          <button class="btn" id="cancel-btn" hidden><i data-icon="x"></i>Cancel waiting</button>
+          <button class="btn" id="zip-btn" hidden><i data-icon="download"></i>Download all</button>
+          <button class="btn" id="clear-btn" hidden title="Clears this list. Finished results stay in History."><i data-icon="eraser"></i>Clear list</button>
+        </div>
+      </div>
+
+      <div class="grid" id="job-grid"></div>
+    </section>
+
+    <!-- ───────────── History ───────────── -->
+    <section class="view" id="view-history" hidden>
+      <header class="view-head">
+        <div>
+          <h1>History</h1>
+          <p id="history-summary"></p>
+        </div>
+        <div class="head-actions">
+          <div class="search"><i data-icon="search"></i><input type="search" id="history-search" placeholder="Search by name"></div>
+          <select data-setting="appearance.history_sort" title="Sort">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="name">Name</option>
+            <option value="largest">Largest</option>
+          </select>
+          <div class="segmented compact" title="Thumbnail size">
+            <label><input type="radio" name="h-size" value="small" data-setting="appearance.thumbnail_size"><span>S</span></label>
+            <label><input type="radio" name="h-size" value="medium" data-setting="appearance.thumbnail_size"><span>M</span></label>
+            <label><input type="radio" name="h-size" value="large" data-setting="appearance.thumbnail_size"><span>L</span></label>
+          </div>
+          <button class="icon-btn" id="history-refresh" title="Re-check which files still exist"><i data-icon="refresh"></i></button>
+        </div>
+      </header>
+
+      <div class="select-bar" id="select-bar" hidden>
+        <strong id="select-count"></strong>
+        <button class="btn" id="select-all">Select all</button>
+        <button class="btn" id="select-none">Clear</button>
+        <span class="spacer"></span>
+        <button class="btn" id="select-zip"><i data-icon="download"></i>Download .zip</button>
+        <button class="btn danger" id="select-delete"><i data-icon="trash"></i>Delete</button>
+      </div>
+
+      <div id="history-body"></div>
+    </section>
+
+    <!-- ───────────── Settings ───────────── -->
+    <section class="view" id="view-settings" hidden>
+      <header class="view-head">
+        <div>
+          <h1>Settings</h1>
+          <p>Changes save automatically to <code id="settings-path"></code></p>
+        </div>
+        <div class="saved" id="saved-indicator"><i data-icon="check"></i>Saved</div>
+      </header>
+
+      <div class="settings">
+        <div class="card">
+          <h2>Appearance</h2>
+          <div class="row">
+            <div><strong>Theme</strong><span>System follows your Windows setting.</span></div>
+            <div class="segmented">
+              <label><input type="radio" name="s-theme" value="system" data-setting="appearance.theme"><span>System</span></label>
+              <label><input type="radio" name="s-theme" value="light" data-setting="appearance.theme"><span>Light</span></label>
+              <label><input type="radio" name="s-theme" value="dark" data-setting="appearance.theme"><span>Dark</span></label>
+            </div>
+          </div>
+          <div class="row">
+            <div><strong>Thumbnail size</strong><span>Size of the cards in the workspace and history.</span></div>
+            <div class="segmented">
+              <label><input type="radio" name="s-size" value="small" data-setting="appearance.thumbnail_size"><span>Small</span></label>
+              <label><input type="radio" name="s-size" value="medium" data-setting="appearance.thumbnail_size"><span>Medium</span></label>
+              <label><input type="radio" name="s-size" value="large" data-setting="appearance.thumbnail_size"><span>Large</span></label>
+            </div>
+          </div>
+          <div class="row">
+            <div><strong>Thumbnail view</strong><span>Full shows the whole image. Cropped fills each tile and cuts off the edges.</span></div>
+            <div class="segmented">
+              <label><input type="radio" name="s-fit" value="full" data-setting="appearance.thumbnail_fit"><span>Full</span></label>
+              <label><input type="radio" name="s-fit" value="crop" data-setting="appearance.thumbnail_fit"><span>Cropped</span></label>
+            </div>
+          </div>
+          <div class="row">
+            <div><strong>Preview backdrop</strong><span>What transparent areas are shown against in the viewer.</span></div>
+            <div class="segmented">
+              <label><input type="radio" name="s-backdrop" value="checker" data-setting="appearance.viewer_background"><span>Checker</span></label>
+              <label><input type="radio" name="s-backdrop" value="light" data-setting="appearance.viewer_background"><span>Light</span></label>
+              <label><input type="radio" name="s-backdrop" value="dark" data-setting="appearance.viewer_background"><span>Dark</span></label>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Processing</h2>
+          <div class="row">
+            <div><strong>Model</strong><span>General works for most subjects. High detail is best at cables, hair and gaps inside the subject<span id="birefnet-note"></span>. People is tuned for portraits. Lightweight trades quality for speed.</span></div>
+            <select data-setting="processing.model">
+              <option value="u2net">General — u2net</option>
+              <option value="birefnet">High detail — BiRefNet</option>
+              <option value="u2net_human_seg">People — u2net_human_seg</option>
+              <option value="u2netp">Lightweight — u2netp</option>
+            </select>
+          </div>
+          <div class="row">
+            <div><strong>Device</strong><span id="device-detail">Auto uses the GPU when one is available.</span></div>
+            <div class="segmented">
+              <label><input type="radio" name="s-device" value="auto" data-setting="processing.device"><span>Auto</span></label>
+              <label><input type="radio" name="s-device" value="gpu" data-setting="processing.device"><span>GPU</span></label>
+              <label><input type="radio" name="s-device" value="cpu" data-setting="processing.device"><span>CPU</span></label>
+            </div>
+          </div>
+          <div class="row">
+            <div><strong>Precision</strong><span>For the High detail model. Half uses about half the GPU memory and is faster, with practically identical results; Full runs the calculations in 32-bit. The other models and the CPU always use full.</span></div>
+            <div class="segmented">
+              <label><input type="radio" name="s-precision" value="half" data-setting="processing.precision"><span>Half</span></label>
+              <label><input type="radio" name="s-precision" value="full" data-setting="processing.precision"><span>Full</span></label>
+            </div>
+          </div>
+          <div class="row">
+            <div><strong>Free GPU memory when idle</strong><span>Release the model after this long without processing. It reloads by itself on the next image, which then takes a few seconds longer. <em id="loaded-model"></em></span></div>
+            <select data-setting="processing.unload_after_minutes" data-type="int">
+              <option value="1">After 1 minute</option>
+              <option value="5">After 5 minutes</option>
+              <option value="15">After 15 minutes</option>
+              <option value="30">After 30 minutes</option>
+              <option value="60">After 1 hour</option>
+              <option value="0">Never</option>
+            </select>
+          </div>
+          <div class="row">
+            <div><strong>Start automatically</strong><span>Process images as soon as they are added. Turn off to queue first and press Start.</span></div>
+            <span class="switch"><input type="checkbox" data-setting="processing.auto_start"><i></i></span>
+          </div>
+          <div class="row">
+            <div><strong>Refine edges (alpha matting)</strong><span>Cleaner hair and soft edges. Noticeably slower; the first use takes about a minute to warm up.</span></div>
+            <span class="switch"><input type="checkbox" data-setting="processing.alpha_matting"><i></i></span>
+          </div>
+          <div class="sub" data-show-if="processing.alpha_matting=true">
+            <div class="row">
+              <div><strong>Foreground threshold</strong><span>Mask values above this are treated as definite subject.</span></div>
+              <div class="range"><input type="range" min="0" max="255" data-setting="processing.alpha_matting_foreground_threshold"><output data-value-of="processing.alpha_matting_foreground_threshold"></output></div>
+            </div>
+            <div class="row">
+              <div><strong>Background threshold</strong><span>Mask values below this are treated as definite background.</span></div>
+              <div class="range"><input type="range" min="0" max="255" data-setting="processing.alpha_matting_background_threshold"><output data-value-of="processing.alpha_matting_background_threshold"></output></div>
+            </div>
+            <div class="row">
+              <div><strong>Erode size</strong><span>Width of the uncertain band around the subject edge.</span></div>
+              <div class="range"><input type="range" min="0" max="50" data-setting="processing.alpha_matting_erode_size"><output data-value-of="processing.alpha_matting_erode_size"></output></div>
+            </div>
+            <div class="row">
+              <div><strong>Working size</strong><span>Longest side used for matting, in pixels. Higher is sharper and slower.</span></div>
+              <div class="range"><input type="range" min="200" max="4000" step="100" data-setting="processing.alpha_matting_base_size"><output data-value-of="processing.alpha_matting_base_size"></output></div>
+            </div>
+          </div>
+          <div class="row">
+            <div><strong>Hard edges</strong><span>Turn the soft mask into a crisp cut-off. Good for logos and flat artwork.</span></div>
+            <span class="switch"><input type="checkbox" data-setting="processing.mask_threshold_enabled"><i></i></span>
+          </div>
+          <div class="sub" data-show-if="processing.mask_threshold_enabled=true">
+            <div class="row">
+              <div><strong>Cut-off</strong><span>Higher keeps less of the image.</span></div>
+              <div class="range"><input type="range" min="0" max="255" data-setting="processing.mask_threshold"><output data-value-of="processing.mask_threshold"></output></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Output</h2>
+          <div class="row">
+            <div><strong>Background</strong><span>Transparent cut-out, a solid color, or just the black-and-white mask.</span></div>
+            <div class="segmented">
+              <label><input type="radio" name="s-mode" value="transparent" data-setting="output.mode"><span>Transparent</span></label>
+              <label><input type="radio" name="s-mode" value="color" data-setting="output.mode"><span>Color</span></label>
+              <label><input type="radio" name="s-mode" value="mask" data-setting="output.mode"><span>Mask</span></label>
+            </div>
+          </div>
+          <div class="row" data-show-if="output.mode=color">
+            <div><strong>Background color</strong><span>Fills the removed area.</span></div>
+            <input type="color" data-setting="output.background_color">
+          </div>
+          <div class="row">
+            <div><strong>File format</strong><span>PNG is lossless. WebP gives much smaller files.</span></div>
+            <select data-setting="output.format">
+              <option value="png">PNG</option>
+              <option value="webp">WebP</option>
+            </select>
+          </div>
+          <div class="row">
+            <div><strong>Auto-trim</strong><span>Crop each result to its subject, removing the empty space around it.</span></div>
+            <span class="switch"><input type="checkbox" data-setting="output.auto_trim"><i></i></span>
+          </div>
+          <div class="row wrap">
+            <div><strong>Output folder</strong><span>Relative paths are inside the app folder.</span></div>
+            <div class="path-field">
+              <input type="text" data-setting="output.directory" spellcheck="false">
+              <button class="btn" id="pick-folder"><i data-icon="folder"></i>Browse…</button>
+              <button class="btn" id="open-folder"><i data-icon="external"></i>Open</button>
+            </div>
+          </div>
+          <div class="row">
+            <div><strong>File name suffix</strong><span>Added to the original name, e.g. photo<em id="suffix-example"></em></span></div>
+            <input type="text" class="short" data-setting="output.suffix" spellcheck="false" maxlength="40">
+          </div>
+          <div class="row">
+            <div><strong>Keep originals</strong><span>Stores a copy of each input for before/after comparison and re-processing.</span></div>
+            <span class="switch"><input type="checkbox" data-setting="output.keep_originals"><i></i></span>
+          </div>
+          <div class="row">
+            <div><strong>Overwrite existing files</strong><span>Off adds “(2)”, “(3)”… when a file name is already taken.</span></div>
+            <span class="switch"><input type="checkbox" data-setting="output.overwrite_existing"><i></i></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Auto-grab</h2>
+          <div class="row">
+            <div><strong>Screenshots folder</strong><span>Process new images saved to <code id="watch-screenshots-path"></code> while the app is open, such as Snipping Tool captures.</span></div>
+            <span class="switch"><input type="checkbox" data-setting="watch.screenshots"><i></i></span>
+          </div>
+          <div class="row">
+            <div><strong>Downloads folder</strong><span>Process new images saved to <code id="watch-downloads-path"></code> while the app is open.</span></div>
+            <span class="switch"><input type="checkbox" data-setting="watch.downloads"><i></i></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>App</h2>
+          <div class="row">
+            <div><strong>Port</strong><span>Local port for this page. Applies the next time the app starts.</span></div>
+            <input type="number" class="short" min="1024" max="65535" data-setting="app.port">
+          </div>
+          <div class="row">
+            <div><strong>Shutdown delay</strong><span>Seconds the background process waits after the last tab closes before it exits.</span></div>
+            <input type="number" class="short" min="2" max="60" data-setting="app.shutdown_grace_seconds">
+          </div>
+          <div class="row">
+            <div><strong>About</strong><span id="about-text"></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="drop-overlay" id="drop-overlay" hidden>
+  <div><i data-icon="image-plus"></i><strong>Drop to remove backgrounds</strong></div>
+</div>
+
+<div class="modal" id="viewer" hidden>
+  <div class="viewer">
+    <div class="viewer-stage" id="viewer-stage">
+      <button class="icon-btn nav-arrow prev" id="viewer-prev" title="Previous (←)"><i data-icon="chevron-left"></i></button>
+      <div class="frame" id="viewer-frame">
+        <img class="result" id="viewer-result" alt="">
+        <div class="original"><img id="viewer-original" alt="" draggable="false"></div>
+        <div class="divider" id="viewer-divider"><span><i data-icon="chevrons"></i></span></div>
+        <span class="tag before">Before</span>
+        <span class="tag after">After</span>
+      </div>
+      <button class="icon-btn nav-arrow next" id="viewer-next" title="Next (→)"><i data-icon="chevron-right"></i></button>
+      <div class="stage-tools">
+        <div class="segmented compact">
+          <label title="Checkerboard"><input type="radio" name="v-backdrop" value="checker" data-setting="appearance.viewer_background"><span>Checker</span></label>
+          <label><input type="radio" name="v-backdrop" value="light" data-setting="appearance.viewer_background"><span>Light</span></label>
+          <label><input type="radio" name="v-backdrop" value="dark" data-setting="appearance.viewer_background"><span>Dark</span></label>
+        </div>
+        <button class="btn" id="viewer-compare"><i data-icon="columns"></i>Compare</button>
+        <span class="counter" id="viewer-counter"></span>
+      </div>
+    </div>
+    <aside class="viewer-side">
+      <div class="side-head">
+        <h3 id="viewer-name"></h3>
+        <button class="icon-btn" id="viewer-close" title="Close (Esc)"><i data-icon="x"></i></button>
+      </div>
+      <dl id="viewer-details"></dl>
+      <div class="side-actions">
+        <button class="btn primary" id="viewer-copy"><i data-icon="copy"></i>Copy image</button>
+        <button class="btn" id="viewer-download"><i data-icon="download"></i>Download</button>
+        <button class="btn" id="viewer-reveal"><i data-icon="external"></i>Show in folder</button>
+        <button class="btn" id="viewer-reprocess" title="Run the original again with the current settings"><i data-icon="refresh"></i>Re-process</button>
+        <button class="btn" id="viewer-trim" title="Crop this image to its subject, removing the empty space around it"><i data-icon="crop"></i>Trim empty space</button>
+        <button class="btn danger" id="viewer-delete"><i data-icon="trash"></i>Delete</button>
+      </div>
+      <p class="hint">Tip: drag the image straight into another app, or press <kbd>Ctrl</kbd> + <kbd>C</kbd>.</p>
+    </aside>
+  </div>
+</div>
+
+<div class="modal" id="confirm" hidden>
+  <div class="dialog">
+    <h3 id="confirm-title"></h3>
+    <p id="confirm-text"></p>
+    <div class="dialog-actions">
+      <button class="btn" id="confirm-cancel">Cancel</button>
+      <button class="btn danger" id="confirm-ok"></button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="offline" hidden>
+  <div class="dialog">
+    <h3>Background Remover has stopped</h3>
+    <p>The background process exits when its last tab is closed or when you quit. Start it again from <strong>BackgroundRemover.exe</strong>; this page reconnects by itself.</p>
+    <div class="dialog-actions"><button class="btn primary" id="offline-reload">Reload</button></div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+</body>
+</html>
